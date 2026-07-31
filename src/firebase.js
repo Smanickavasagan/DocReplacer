@@ -15,12 +15,6 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export const addToWaitlist = async (name, email, docType) => {
-  console.log("Attempting to add to waitlist...", { name, email, docType });
-  console.log("Firebase config check:", {
-    projectId: firebaseConfig.projectId,
-    hasApiKey: !!firebaseConfig.apiKey
-  });
-  
   try {
     const docRef = await addDoc(collection(db, 'waitlist'), {
       name,
