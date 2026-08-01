@@ -1,11 +1,19 @@
-import React, { useState } from 'react';
-import { Sparkles, Zap, Lock, Layers, ArrowRight, CheckCircle2, Loader2, Play } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Zap, Lock, Layers, ArrowRight, CheckCircle2, Loader2, Play, X, XCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { addToWaitlist } from './firebase';
 import { Link } from 'react-router-dom';
 
 export default function Landing() {
+  const [isImageOpen, setIsImageOpen] = useState(false);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setIsImageOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
@@ -88,8 +96,79 @@ export default function Landing() {
 
         </div>
       </main>
+      {/* Why DocReplacer Section */}
+      <section className="py-20 bg-white border-t border-slate-200">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">Why DocReplacer?</h2>
+            <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+              Stop fighting with formatting. See the difference between typical AI output and our clean, professional Word documents.
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div className="space-y-6">
+              <div className="bg-rose-50/50 border border-rose-100 p-6 rounded-2xl transition-all hover:shadow-md hover:bg-rose-50">
+                <h3 className="text-xl font-semibold text-rose-900 flex items-center gap-3 mb-4">
+                  <span className="w-8 h-8 rounded-full bg-rose-200 text-rose-700 flex items-center justify-center font-bold text-sm">X</span>
+                  Other AI Generators
+                </h3>
+                <ul className="space-y-3 text-rose-700 font-medium">
+                  <li className="flex items-start gap-2">
+                    <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-400" /> Outputs unstructured text lacking hierarchy
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-400" /> Disregards standard formatting protocols
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-400" /> Incurs significant overhead in manual revision
+                  </li>
+                </ul>
+              </div>
 
+              <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-2xl shadow-sm relative overflow-hidden transition-all hover:shadow-md">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                <h3 className="text-xl font-semibold text-indigo-900 flex items-center gap-3 mb-4 relative z-10">
+                  <span className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </span>
+                  DocReplacer
+                </h3>
+                <ul className="space-y-3 text-indigo-800 font-medium relative z-10">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-indigo-500" /> Enforces strict adherence to professional formatting standards
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-indigo-500" /> Automates semantic structuring of headings, tables, and lists
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-indigo-500" /> Delivers client-ready documentation instantly upon generation
+                  </li>
+                </ul>
+              </div>
+            </div>
 
+            <div 
+              className="relative rounded-2xl overflow-hidden shadow-2xl border border-slate-200 bg-white group cursor-pointer"
+              onClick={() => setIsImageOpen(true)}
+            >
+              <div className="absolute top-0 left-0 right-0 bg-slate-100 border-b border-slate-200 px-4 py-3 flex items-center gap-2 z-10">
+                <div className="w-3 h-3 rounded-full bg-rose-400"></div>
+                <div className="w-3 h-3 rounded-full bg-amber-400"></div>
+                <div className="w-3 h-3 rounded-full bg-emerald-400"></div>
+                <span className="text-xs text-slate-500 font-medium ml-2">Document Formatting Comparison</span>
+              </div>
+              <div className="pt-10 bg-slate-50">
+                <img 
+                  src="/DocReplacer.png" 
+                  alt="Comparison between unformatted AI generated docx and beautifully formatted DocReplacer docx" 
+                  className="w-full h-auto object-cover transform transition-transform duration-700 group-hover:scale-[1.02]" 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="py-8 border-t border-slate-200 bg-slate-50">
@@ -100,6 +179,27 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Modal for Image */}
+      {isImageOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 md:p-8" onClick={() => setIsImageOpen(false)}>
+          <button 
+            className="absolute top-4 right-4 md:top-8 md:right-8 w-12 h-12 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsImageOpen(false);
+            }}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img 
+            src="/DocReplacer.png" 
+            alt="Expanded Comparison" 
+            className="max-w-full max-h-full rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
