@@ -79,7 +79,7 @@ export default function Landing() {
 
           <div className="max-w-md mx-auto mb-6 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm font-medium text-left shadow-sm">
             <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
-            <p><strong>Note:</strong> This is an Alpha demo version. The AI may make mistakes or formatting errors. Please verify generated documents.</p>
+            <p><strong>Note:</strong> This is a very basic Alpha demo version of the app. The generated documents are sample work, and the AI may make mistakes or formatting errors. All issues and other problems will be fixed in the upcoming full version. Please verify generated documents.</p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">

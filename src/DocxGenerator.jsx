@@ -567,7 +567,7 @@ JSON:`;
 
           <div className="mt-5 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-[13px] leading-relaxed font-medium relative z-10">
             <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
-            <p><strong>Alpha Demo Warning:</strong> Please do <strong>not</strong> add personal names or sensitive data, as this is a public demo version. The full version will offer private secure generation.</p>
+            <p><strong>Alpha Demo Warning:</strong> This is a very basic early version of the app, and generated documents are just sample work. Please do <strong>not</strong> add personal names or sensitive data. All issues and other problems will be fixed in the full version, which will also offer private secure generation.</p>
           </div>
         </div>
       </div>
