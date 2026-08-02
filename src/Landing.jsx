@@ -177,6 +177,11 @@ export default function Landing() {
             <img src="/Logo.ico" alt="DocReplacer Logo" className="w-5 h-5 object-contain opacity-50" />
             <span className="text-sm text-slate-500 font-medium">© {new Date().getFullYear()} DocReplacer. All rights reserved.</span>
           </div>
+          <div className="mt-4">
+            <a href="https://dang.ai" target="_blank" rel="dofollow noopener" style={{ display: 'inline-block', textDecoration: 'none' }}>
+              <img src="https://assets.dang.ai/badges/dang-verified-light.png" alt="Verified on DANG!" width="150" height="54" style={{ display: 'block', width: '150px', maxWidth: '100%', height: 'auto', border: 0, outline: 'none', textDecoration: 'none' }} />
+            </a>
+          </div>
         </div>
       </footer>
 
