@@ -81,20 +81,22 @@ export default function WaitlistModal() {
               disabled={loading}
               className="w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm font-medium transition-all disabled:opacity-50"
             />
-            <select
+            <input
+              type="text"
+              list="doc-types"
               value={docType}
               onChange={(e) => setDocType(e.target.value)}
               disabled={loading}
               required
-              className={`w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm font-medium transition-all disabled:opacity-50 appearance-none ${docType === '' ? 'text-slate-400' : 'text-slate-900'}`}
-            >
-              <option value="" disabled>What kind of document are you generating?</option>
-              <option value="Academic/University Report">Academic/University Report</option>
-              <option value="Business Proposal">Business Proposal</option>
-              <option value="Consulting Brief">Consulting Brief</option>
-              <option value="Executive Summary">Executive Summary</option>
-              <option value="Other">Other</option>
-            </select>
+              placeholder="What kind of document are you generating?"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm font-medium transition-all disabled:opacity-50"
+            />
+            <datalist id="doc-types">
+              <option value="Academic/University Report" />
+              <option value="Business Proposal" />
+              <option value="Consulting Brief" />
+              <option value="Executive Summary" />
+            </datalist>
             {error && <p className="text-red-500 text-sm font-medium px-2">{error}</p>}
             <button 
               type="submit" 
