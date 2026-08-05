@@ -166,6 +166,13 @@ export default function Landing() {
                         className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
                       />
                     </a>
+                    <a href="https://productburst.com/product/docreplacer" target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <img 
+                        src="https://3188a5210b07f4ad511bbcdc967bc67b.cdn.bubble.io/f1747781918344x939992978866771600/pB-Badge.png" 
+                        alt="Featured on ProductBurst" 
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
+                      />
+                    </a>
                   </React.Fragment>
                 ))}
               </div>
