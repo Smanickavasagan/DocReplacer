@@ -132,29 +132,49 @@ export default function Landing() {
 
       {/* Footer */}
       <div className="border-t border-slate-100" />
-      <footer className="py-8 px-6">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="py-12 px-6">
+        <div className="max-w-5xl mx-auto flex flex-col items-center gap-10">
+          
+          {/* Featured On Marquee */}
+          <div className="w-full flex flex-col items-center gap-6">
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Featured On</span>
+            <div className="w-full overflow-hidden relative">
+              <div className="absolute inset-y-0 left-0 w-16 md:w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+              <div className="absolute inset-y-0 right-0 w-16 md:w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
+              
+              <div className="animate-marquee flex gap-12 items-center">
+                {[...Array(4)].map((_, i) => (
+                  <React.Fragment key={i}>
+                    <a href="https://dang.ai" target="_blank" rel="dofollow noopener" className="shrink-0">
+                      <img
+                        src="https://assets.dang.ai/badges/dang-verified-light.png"
+                        alt="Verified on DANG!"
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity"
+                      />
+                    </a>
+                    <a href="https://openhunts.com" target="_blank" rel="noreferrer noopener" title="OpenHunts Club" className="shrink-0">
+                      <img 
+                        alt="OpenHunts Club Member" 
+                        src="https://cdn.openhunts.com/badges/club.webp" 
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
+                      />
+                    </a>
+                    <a href="https://earlyhunt.com/project/free-docx-generator-from-text-prompts" target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <img 
+                        src="https://earlyhunt.com/badges/earlyhunt-badge-light.svg" 
+                        alt="Featured on EarlyHunt" 
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
+                      />
+                    </a>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
             <img src="/Logo.ico" alt="" className="w-4 h-4 object-contain opacity-40" />
             <span className="text-xs text-slate-400">© {new Date().getFullYear()} DocReplacer</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a href="https://dang.ai" target="_blank" rel="dofollow noopener">
-              <img
-                src="https://assets.dang.ai/badges/dang-verified-light.png"
-                alt="Verified on DANG!"
-                className="w-24 h-auto opacity-60 hover:opacity-100 transition-opacity"
-              />
-            </a>
-            <a href="https://openhunts.com" target="_blank" rel="noreferrer noopener" title="OpenHunts Club">
-              <img 
-                alt="OpenHunts Club Member" 
-                height="105" 
-                src="https://cdn.openhunts.com/badges/club.webp" 
-                style={{ width: '195px', height: 'auto' }} 
-                width="486" 
-              />
-            </a>
           </div>
         </div>
       </footer>
