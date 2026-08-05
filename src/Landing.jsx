@@ -138,13 +138,24 @@ export default function Landing() {
             <img src="/Logo.ico" alt="" className="w-4 h-4 object-contain opacity-40" />
             <span className="text-xs text-slate-400">© {new Date().getFullYear()} DocReplacer</span>
           </div>
-          <a href="https://dang.ai" target="_blank" rel="dofollow noopener">
-            <img
-              src="https://assets.dang.ai/badges/dang-verified-light.png"
-              alt="Verified on DANG!"
-              className="w-24 h-auto opacity-60 hover:opacity-100 transition-opacity"
-            />
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="https://dang.ai" target="_blank" rel="dofollow noopener">
+              <img
+                src="https://assets.dang.ai/badges/dang-verified-light.png"
+                alt="Verified on DANG!"
+                className="w-24 h-auto opacity-60 hover:opacity-100 transition-opacity"
+              />
+            </a>
+            <a href="https://openhunts.com" target="_blank" rel="noreferrer noopener" title="OpenHunts Club">
+              <img 
+                alt="OpenHunts Club Member" 
+                height="105" 
+                src="https://cdn.openhunts.com/badges/club.webp" 
+                style={{ width: '195px', height: 'auto' }} 
+                width="486" 
+              />
+            </a>
+          </div>
         </div>
       </footer>
 
