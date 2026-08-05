@@ -198,6 +198,7 @@ function Step1Prompt({ onDone, setLoadingPhase }) {
   const [phase, setPhase] = useState("idle");
   const [streamLog, setStreamLog] = useState("");
   const abortRef = useRef(false);
+  const understandingRef = useRef(null); // holds Phase 0 result — subject/kind source of truth for all later prompts
 
   // Words per page on A4 ~350. Each body block = 1 paragraph.
   const wordsPerPara = pages <= 2 ? 120 : pages <= 4 ? 150 : 180;
@@ -245,8 +246,81 @@ function Step1Prompt({ onDone, setLoadingPhase }) {
     throw new Error("AI response could not be parsed. Please try again.");
   };
 
-  /* ── PHASE 1: fast outline ── */
-  const getOutline = async () => {
+  /* ── PHASE 0: understand the user's raw request before planning anything ── */
+  const understandPrompt = async () => {
+    const p =
+      `You are an intake analyst for a document-generation system. Your ONLY job is to read the user's raw, possibly messy request and extract structured intent. Do NOT write any document content yet.
+
+User's raw request: "${prompt.trim()}"
+Selected document style: ${docType}
+
+Extract:
+- subject: the real-world subject/entity this document is about, with instruction verbs stripped (e.g. "Coffee Shop", not "create me a proposal for coffee shop")
+- documentTitle: a professional title for the finished document. Title Case, 3–8 words, no quotes, no trailing punctuation. Strip command verbs ("create me a", "write", "generate", "make", "I need", "can you", "please") and filler ("a document for", "about", "regarding"). Do NOT copy the user's sentence structure.
+- documentKind: the type of document being requested (e.g. "proposal", "report", "business plan", "case study", "SOW", "brief"). Infer it even if the user didn't say it explicitly.
+- audience: who this document is likely for (e.g. "prospective client", "internal stakeholders", "investors"). Infer a sensible default if not stated.
+- tone: one of "formal" | "professional" | "conversational" | "persuasive" — infer from docType and phrasing.
+- keyRequirements: array of explicit asks the user made (e.g. "include a competitor comparison table", "focus on growth strategy"). Empty array if none.
+
+Examples:
+Input: "create me a Proposal for Coffee Shop"
+Output: {"subject":"Coffee Shop","documentTitle":"Coffee Shop Business Proposal","documentKind":"proposal","audience":"prospective client or investor","tone":"persuasive","keyRequirements":[]}
+
+Input: "write a report about our Q3 marketing performance, include a chart of ad spend by channel"
+Output: {"subject":"Q3 Marketing Performance","documentTitle":"Q3 Marketing Performance Report","documentKind":"report","audience":"internal stakeholders","tone":"professional","keyRequirements":["include ad spend by channel data"]}
+
+ONLY valid JSON, no markdown fences, no extra text:
+{"subject":"...","documentTitle":"...","documentKind":"...","audience":"...","tone":"...","keyRequirements":[]}
+JSON:`;
+
+    let raw = "";
+    const gen = streamOpenAI("", p, { max_tokens: 300, temperature: 0.2, onStatus: setStreamLog });
+    for await (const chunk of gen) {
+      if (abortRef.current) return null;
+      raw += chunk;
+      setStreamLog("Understanding your request…");
+    }
+
+    let understanding = null;
+    try { understanding = parseJsonRobust(raw); } catch (_) { }
+
+    // If the model fails to return usable JSON, fall back gracefully instead of blocking the flow —
+    // the downstream cleanTitle() safety net still protects the title even in this degraded path.
+    if (!understanding || typeof understanding !== "object") {
+      understanding = {
+        subject: prompt.trim(),
+        documentTitle: prompt.trim(),
+        documentKind: "document", // generic fallback — NEVER the style selector, that caused the "Documentation" bug
+        audience: "",
+        tone: docType,
+        keyRequirements: [],
+      };
+    }
+    understanding.documentTitle = cleanTitle(understanding.documentTitle, prompt);
+    understanding.keyRequirements = Array.isArray(understanding.keyRequirements) ? understanding.keyRequirements.map(String).filter(Boolean) : [];
+    return understanding;
+  };
+
+  /* ── Defense-in-depth: strip leaked meta-language if the model still echoes the raw prompt ── */
+  const cleanTitle = (rawTitle, originalPrompt) => {
+    let t = String(rawTitle || "").trim().replace(/^["'“”]+|["'“”]+$/g, "");
+    // If the model basically returned the raw prompt back, strip common instruction verbs/fillers
+    const leadingCommand = /^(create|write|generate|make|draft|build|prepare|design)\s+(me\s+)?(a|an|the)?\s*/i;
+    const fillerPhrases = /\b(for me|please|can you|i need|i want|document for|regarding)\b/gi;
+    if (leadingCommand.test(t) || t.toLowerCase() === originalPrompt.trim().toLowerCase()) {
+      t = t.replace(leadingCommand, "").replace(fillerPhrases, "").trim();
+    }
+    // Title-case cleanup + trim trailing punctuation
+    t = t.replace(/[.!?]+$/, "").trim();
+    if (!t) t = "Document";
+    // Cap runaway lengths (model ignoring the 3–8 word guidance)
+    const words = t.split(/\s+/);
+    if (words.length > 10) t = words.slice(0, 10).join(" ");
+    return t;
+  };
+
+  /* ── PHASE 1: fast outline (plan), built from the understood intent, not the raw prompt ── */
+  const getOutline = async (understanding) => {
     const userSections = parsedSubtopics;
     const targetSectionCount = userSections
       ? userSections.length
@@ -265,24 +339,33 @@ function Step1Prompt({ onDone, setLoadingPhase }) {
       : `Sections: EXACTLY ${targetSectionCount} h1s. First="Introduction", last="Conclusion". Choose meaningful headings for the topic.`;
 
     const p =
-      `Expert document architect. Create outline JSON for a ${docType}.
-Topic: "${prompt.trim()}"
+      `Expert document architect. Create a section outline JSON for a ${understanding.documentKind} (writing style: ${docType}).
+
+The user's request has already been understood — use this, not raw guesswork:
+- Subject: "${understanding.subject}"
+- Document kind: ${understanding.documentKind}
+- Audience: ${understanding.audience || "general professional audience"}
+- Tone: ${understanding.tone || docType}
+${understanding.keyRequirements.length ? `- User's explicit requirements — each MUST be reflected in at least one section heading or its extras:\n${understanding.keyRequirements.map(r => `  • ${r}`).join("\n")}` : ""}
+
 ${sectionInstruction}
 ${densityNote}
 Extras per section (after body): "h2:Title"|"bullets"|"table"|"columns"(≥5p, max 1 total, truly parallel only)|"hr"(max 2 total)|[]
 Rules: vary block types; no generic headings; columns only for Pros/Cons-style contrast; table only for structured data.
-ONLY valid JSON:
-{"title":"...","sections":[{"heading":"...","extras":[]},{"heading":"...","extras":["bullets"]}]}
+
+ONLY valid JSON. Do NOT include a title field — the title is already finalized:
+{"sections":[{"heading":"...","extras":[]},{"heading":"...","extras":["bullets"]}]}
 JSON:`;
     let raw = "";
     const gen = streamOpenAI("", p, { max_tokens: 600, temperature: 0.25, onStatus: setStreamLog });
     for await (const chunk of gen) {
       if (abortRef.current) return null;
       raw += chunk;
-      setStreamLog("Outlining: " + raw.slice(-60));
+      setStreamLog("Planning outline: " + raw.slice(-60));
     }
     const outline = parseJsonRobust(raw);
     outline._targetSectionCount = targetSectionCount;
+    outline.title = understanding.documentTitle; // finalized in Phase 0 — never re-derived here
     return outline;
   };
 
@@ -292,11 +375,11 @@ JSON:`;
       ? `Do NOT repeat: ${previousSummary}`
       : `Opening section — set the stage.`;
     const p =
-      `${docType} writer. Write ${numParas} body paragraph(s).
+      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Write ${numParas} body paragraph(s).
 Doc: "${docTitle}" | Section: "${heading}"
 ${wordsPerPara}–${wordsPerPara + 50} words each. ${contextNote}
 Rules: distinct aspects per para, natural transitions, **bold** key terms (2–4/para), _italic_ for jargon.
-NO: "In this section…", closing summaries, filler phrases, fake stats, headings, bullets, JSON.
+NO: "In this section…", closing summaries, filler phrases, fake stats, headings, bullets, JSON, meta-commentary about the document itself (e.g. "Key Takeaways", "Future Implications", "This proposal/report demonstrates…", "In conclusion, this document..."). Write as if the reader is a person reading real content, never as if summarizing your own output.
 Paragraphs:`;
     let raw = "";
     const gen = streamOpenAI("", p, {
@@ -328,7 +411,7 @@ Paragraphs:`;
       parts.push(`"columns": array of exactly 2 strings representing genuinely contrasting aspects of "${heading}". Each must start with a meaningful bold label derived from the content (e.g. "**Advantages**: ...", "**Disadvantages**: ...", "**Pros**: ...", "**Cons**: ...", "**Benefits**: ...", "**Drawbacks**: ...") followed by 2–3 sentences. NEVER use the word "Label" as the label.`);
 
     const p =
-      `${docType} writer. Doc: "${docTitle}" | Section: "${heading}"
+      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Doc: "${docTitle}" | Section: "${heading}"
 Return ONE JSON object with ONLY these keys: ${extrasNeeded.join(", ")}
 ${parts.join("\n")}
 NO markdown fences, no extra text.
@@ -387,7 +470,7 @@ JSON:`;
   /* ── PHASE 2e: batch h2 subsections in one call ── */
   const fillH2Batch = async (docTitle, heading, subHeadings, previousSummary) => {
     const p =
-      `${docType} writer. Doc: "${docTitle}" | Parent section: "${heading}"
+      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Doc: "${docTitle}" | Parent section: "${heading}"
 Write one body paragraph per subsection below. ${previousSummary ? `Do NOT repeat: ${previousSummary}` : ""}
 ${wordsPerPara}–${wordsPerPara + 40} words each. **bold** key terms (2–3/para). No filler, no "In this section…".
 Return ONE JSON object keyed by subsection title:
@@ -412,15 +495,21 @@ JSON:`;
     if (!prompt.trim()) { setError("Please describe your document."); return; }
     if (prompt.trim().length < 10) { setError("Please provide a more descriptive prompt (at least 20 characters)."); return; }
     if (prompt.length > 2000) { setError("Prompt is too long. Please keep it under 2000 characters."); return; }
-    setError(""); setLoading(true); setTokens(0); setPhase("structure");
-    setStreamLog("Connecting to AI…");
+    setError(""); setLoading(true); setTokens(0); setPhase("understanding");
+    setStreamLog("Understanding your request…");
     setLoadingPhase("template");
     abortRef.current = false;
     _nid = 0;
 
     try {
-      // ── Phase 1: outline (fast) ──
-      const outline = await getOutline();
+      // ── Phase 0: understand the user's raw request ──
+      const understanding = await understandPrompt();
+      if (abortRef.current || !understanding) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
+      understandingRef.current = understanding;
+
+      setPhase("structure");
+      // ── Phase 1: outline (plan) — built from the understood intent, not the raw prompt ──
+      const outline = await getOutline(understanding);
       if (abortRef.current || !outline) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
 
       // Safety truncation: enforce exactly what was planned
