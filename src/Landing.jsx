@@ -173,6 +173,13 @@ export default function Landing() {
                         className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
                       />
                     </a>
+                    <a href="https://tools.launchllama.co?utm_source=badge&utm_medium=referral" target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <img 
+                        src="https://tools.launchllama.co/featured-badge.png?v=2" 
+                        alt="As seen on Launch Llama Newsletter" 
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
+                      />
+                    </a>
                   </React.Fragment>
                 ))}
               </div>
