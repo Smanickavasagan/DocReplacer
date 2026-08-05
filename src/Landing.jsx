@@ -152,14 +152,14 @@ export default function Landing() {
                         className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity"
                       />
                     </a>
-                    <a href="https://openhunts.com" target="_blank" rel="noreferrer noopener" title="OpenHunts Club" className="shrink-0">
+                    <a href="https://openhunts.com" target="_blank" title="OpenHunts Club" className="shrink-0">
                       <img 
                         alt="OpenHunts Club Member" 
                         src="https://cdn.openhunts.com/badges/club.webp" 
                         className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
                       />
                     </a>
-                    <a href="https://earlyhunt.com/project/free-docx-generator-from-text-prompts" target="_blank" rel="noopener noreferrer" className="shrink-0">
+                    <a href="https://earlyhunt.com/project/free-docx-generator-from-text-prompts" target="_blank" rel="noopener" className="shrink-0">
                       <img 
                         src="https://earlyhunt.com/badges/earlyhunt-badge-light.svg" 
                         alt="Featured on EarlyHunt" 
