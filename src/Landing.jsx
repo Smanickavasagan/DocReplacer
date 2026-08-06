@@ -180,6 +180,11 @@ export default function Landing() {
                         className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
                       />
                     </a>
+                    <a href="https://aiai.tools/" target="_blank" rel="noopener noreferrer" className="shrink-0 group">
+                      <div className="h-12 flex items-center justify-center px-4 rounded-lg bg-slate-900 border border-slate-700 opacity-60 group-hover:opacity-100 transition-opacity">
+                        <span className="text-white font-semibold text-sm tracking-wide">Ai Tools List</span>
+                      </div>
+                    </a>
                   </React.Fragment>
                 ))}
               </div>
