@@ -185,6 +185,13 @@ export default function Landing() {
                         <span className="text-white font-semibold text-sm tracking-wide">Ai Tools List</span>
                       </div>
                     </a>
+                    <a href="https://www.aidirectori.es" target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <img 
+                        src="https://cdn.aidirectori.es/ai-tools/badges/light-mode.png" 
+                        alt="AI Directories Badge" 
+                        className="h-12 w-auto opacity-60 hover:opacity-100 transition-opacity" 
+                      />
+                    </a>
                   </React.Fragment>
                 ))}
               </div>
