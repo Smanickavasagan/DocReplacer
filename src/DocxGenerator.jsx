@@ -622,11 +622,10 @@ JSON:`;
       <div className="flex-1 flex flex-col">
         <div className="mb-8">
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 mb-4 leading-tight">
-            Create your document <br className="hidden sm:block" />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">in seconds.</span>
+            What do you want to create?
           </h1>
           <p className="text-slate-600 text-lg max-w-xl">
-            Describe what you need. The AI will structure, write, and format a native Word document instantly.
+            Describe your idea. DocReplacer will structure the content, create the document, and format it for Word.
           </p>
         </div>
 
@@ -636,27 +635,27 @@ JSON:`;
           </div>
           
           <label className="block text-sm font-bold text-slate-900 mb-3 relative z-10 flex items-center gap-2">
-            Document Prompt <span className="text-indigo-600">*</span>
+            Describe your document <span className="text-indigo-600">*</span>
           </label>
           <textarea 
             rows={7} 
             value={prompt} 
             onChange={e => setPrompt(e.target.value)} 
             disabled={loading}
-            placeholder='e.g. "A comprehensive market analysis report for Q3, targeting stakeholders. Include a competitor comparison table and bullet points for growth strategies."'
+            placeholder='“Create a project report about our AI automation system...”'
             className="w-full flex-1 px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all resize-y text-base leading-relaxed placeholder:text-slate-400 font-medium relative z-10" 
           />
           <div className="flex items-center justify-between mt-3 relative z-10">
             <div className="flex items-center gap-2">
               <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-              <p className="text-xs text-slate-500 font-medium">Ready to generate</p>
+              <p className="text-xs text-slate-500 font-medium">Ready to create</p>
             </div>
             <p className={`text-xs font-semibold ${prompt.length > 20 ? 'text-indigo-600' : 'text-slate-400'}`}>{prompt.length} chars</p>
           </div>
 
           <div className="mt-5 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-[13px] leading-relaxed font-medium relative z-10">
             <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
-            <p><strong>Alpha Demo Warning:</strong> This is a very basic early version of the app, and generated documents are just sample work. Please do <strong>not</strong> add personal names or sensitive data. All issues and other problems will be fixed in the full version, which will also offer private secure generation.</p>
+            <p><strong>Alpha Demo:</strong> This is an early version of DocReplacer. Generated documents may contain content or formatting errors. Please use sample information and review the document before using it.</p>
           </div>
         </div>
       </div>
@@ -732,7 +731,7 @@ JSON:`;
               ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
               : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 hover:shadow-xl hover:shadow-indigo-600/30 hover:-translate-y-0.5'
               }`}>
-            {loading ? <><span className="animate-spin inline-block text-xl">⟳</span> Building...</> : <>Generate Document <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></>}
+            {loading ? <><span className="animate-spin inline-block text-xl">⟳</span> Building...</> : <>Create Document <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></>}
           </button>
           
           {loading && (
