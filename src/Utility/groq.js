@@ -1,26 +1,27 @@
 import { sanitiseJsonStr, repairTruncated, extractObjects, safeParseJSON } from './jsonParser.js';
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const GROQ_API_KEY_PLAN = import.meta.env.VITE_GROQ_API_KEY_PLAN;
 const GROQ_MODEL = import.meta.env.VITE_GROQ_MODEL || "llama-3.3-70b-versatile";
 
 const GROQ_STATUS_MESSAGES = {
   400: "Bad request. Check your prompt or Groq model name.",
-  401: "Invalid Groq API key. Check VITE_GROQ_API_KEY in your .env file.",
-  403: "Groq API key does not have permission or quota exceeded.",
-  429: "Groq rate limit exceeded. Please wait and try again.",
-  500: "Groq encountered a server error. Please try again.",
-  503: "Groq is temporarily overloaded. Retrying…",
+  401: "Invalid API key.",
+  403: "API key does not have permission or quota exceeded.",
+  429: "rate limit exceeded. Please wait and try again.",
+  500: "server error. Please try again.",
+  503: "temporarily overloaded. Retrying…",
 };
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function groqRequest(body, retries = 5, onStatus = null) {
-  if (!GROQ_API_KEY) throw new Error("Groq API key is missing. Set VITE_GROQ_API_KEY in your .env file.");
+async function groqRequest(body, retries = 5, onStatus = null, apiKey = GROQ_API_KEY) {
+  if (!apiKey) throw new Error("Groq API key is missing. Set VITE_GROQ_API_KEY in your .env file.");
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
     });
@@ -64,6 +65,24 @@ async function callOpenAI(_apiKey, prompt, opts = {}) {
   return d.choices?.[0]?.message?.content || "";
 }
 
+async function callOpenAIJSON(_apiKey, prompt, opts = {}) {
+  const apiKeyToUse = GROQ_API_KEY_PLAN || GROQ_API_KEY;
+  const res = await groqRequest(
+    {
+      model: import.meta.env.VITE_GROQ_PLANNING_MODEL || GROQ_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: opts.temperature ?? 0.2,
+      max_tokens: opts.max_tokens || 4096,
+      response_format: { type: "json_object" }
+    },
+    5,
+    opts.onStatus || null,
+    apiKeyToUse
+  );
+  const d = await res.json();
+  return d.choices?.[0]?.message?.content || "";
+}
+
 async function* streamOpenAI(_apiKey, prompt, opts = {}) {
   const res = await groqRequest(
     {
@@ -100,4 +119,4 @@ async function* streamOpenAI(_apiKey, prompt, opts = {}) {
 }
 
 
-export { groqRequest, callOpenAI, streamOpenAI };
+export { groqRequest, callOpenAI, streamOpenAI, callOpenAIJSON };

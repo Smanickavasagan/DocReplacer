@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { DEFAULT_DOC_STYLES, C, BULLET_STYLES, BULLET_STYLE_NAMES, DOC_TYPES } from './Utility/constants.js';
-import { streamOpenAI, callOpenAI, groqRequest } from './Utility/groq.js';
+import { streamOpenAI, callOpenAI, groqRequest, callOpenAIJSON } from './Utility/groq.js';
 import { sanitiseJsonStr, repairTruncated, safeParseJSON, extractObjects } from './Utility/jsonParser.js';
 import { buildDocx, hasTableData } from './Utility/docxBuilder.js';
 
@@ -172,16 +173,85 @@ function DocPreviewModal({ uint8, title, onClose }) {
 
 
 function LoadingOverlay({ phase }) {
-  const msg = phase === "template" ? "Streaming from AI…" : phase === "docx" ? "Assembling .docx file…" : "Working…";
-  return (
+  const msg = phase === "docx" ? "Assembling .docx file…" : "Working…";
+  return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[9000] bg-slate-900/50 backdrop-blur-md flex items-center justify-center">
       <div className="bg-white border border-slate-200 rounded-[24px] py-10 px-12 flex flex-col items-center gap-5 shadow-[0_24px_64px_rgba(0,0,0,0.2)]">
         <div className="w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin" />
         <div className="text-lg font-bold text-slate-900 tracking-tight">{msg}</div>
         <div className="text-[12px] text-slate-400 font-medium">This may take a moment…</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
+}
+
+function validateDesign(design) {
+  const d = {
+    title: { ...DEFAULT_DOC_STYLES.title },
+    h1: { ...DEFAULT_DOC_STYLES.h1 },
+    h2: { ...DEFAULT_DOC_STYLES.h2 },
+    paragraph: { ...DEFAULT_DOC_STYLES.paragraph },
+    table: { ...DEFAULT_DOC_STYLES.table },
+    bullets: { ...DEFAULT_DOC_STYLES.bullets },
+    pageMargins: { ...DEFAULT_DOC_STYLES.pageMargins }
+  };
+  if (!design) return d;
+
+  const clamp = (val, min, max, def) => {
+    const v = Number(val);
+    if (isNaN(v)) return def;
+    if (v < min) return min;
+    if (v > max) return max;
+    return v;
+  };
+  const normColor = (c, def) => (typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(c)) ? c : def;
+  const normFont = (f, def) => [
+    "Arial", "Times New Roman", "Georgia", "Calibri", "Verdana", 
+    "Garamond", "Trebuchet MS", "Palatino Linotype", "Helvetica", "Tahoma"
+  ].includes(f) ? f : def;
+  const normAlign = (a, def) => ["left", "center", "right", "justify"].includes(a) ? a : def;
+
+  if (design.pageMargins) {
+    d.pageMargins = {
+      top: clamp(design.pageMargins.top, 0, 6, 1.0),
+      bottom: clamp(design.pageMargins.bottom, 0, 6, 1.0),
+      left: clamp(design.pageMargins.left, 0, 6, 1.0),
+      right: clamp(design.pageMargins.right, 0, 6, 1.0),
+    };
+  }
+
+  for (const key of ["title", "h1", "h2", "paragraph", "table"]) {
+    if (design[key]) {
+      if (design[key].font) d[key].font = normFont(design[key].font, d[key].font);
+      if (design[key].size !== undefined) d[key].size = clamp(design[key].size, 6, 96, d[key].size);
+      if (design[key].color) d[key].color = normColor(design[key].color, d[key].color);
+      if (design[key].align) d[key].align = normAlign(design[key].align, d[key].align);
+      if (design[key].bgColor !== undefined) d[key].bgColor = design[key].bgColor === "" ? "" : normColor(design[key].bgColor, d[key].bgColor);
+      if (design[key].marginTop !== undefined) d[key].marginTop = clamp(design[key].marginTop, 0, 100, d[key].marginTop);
+      if (design[key].marginBottom !== undefined) d[key].marginBottom = clamp(design[key].marginBottom, 0, 100, d[key].marginBottom);
+      if (design[key].lineSpacing !== undefined) d[key].lineSpacing = clamp(design[key].lineSpacing, 1, 3, d[key].lineSpacing);
+      if (typeof design[key].bold === 'boolean') d[key].bold = design[key].bold;
+      if (typeof design[key].italic === 'boolean') d[key].italic = design[key].italic;
+    }
+  }
+
+  if (design.table) {
+    if (design.table.headerBg) d.table.headerBg = normColor(design.table.headerBg, d.table.headerBg);
+    if (design.table.headerColor) d.table.headerColor = normColor(design.table.headerColor, d.table.headerColor);
+    if (design.table.rowAltBg) d.table.rowAltBg = normColor(design.table.rowAltBg, d.table.rowAltBg);
+    if (design.table.borderColor) d.table.borderColor = normColor(design.table.borderColor, d.table.borderColor);
+  }
+
+  if (design.bullets) {
+    if (BULLET_STYLE_NAMES.includes(design.bullets.styleName)) d.bullets.styleName = design.bullets.styleName;
+    if (design.bullets.indentLeft !== undefined) d.bullets.indentLeft = clamp(design.bullets.indentLeft, 0, 2880, d.bullets.indentLeft);
+    if (design.bullets.hanging !== undefined) d.bullets.hanging = clamp(design.bullets.hanging, 0, 1440, d.bullets.hanging);
+    if (design.bullets.itemSpacingAfter !== undefined) d.bullets.itemSpacingAfter = clamp(design.bullets.itemSpacingAfter, 0, 60, d.bullets.itemSpacingAfter);
+    if (design.bullets.lineSpacing !== undefined) d.bullets.lineSpacing = clamp(design.bullets.lineSpacing, 1, 3, d.bullets.lineSpacing);
+  }
+
+  return d;
 }
 
 
@@ -190,15 +260,18 @@ function LoadingOverlay({ phase }) {
 
 function Step1Prompt({ onDone, setLoadingPhase }) {
   const [prompt, setPrompt] = useState("");
-  const [docType, setDocType] = useState("professional");
   const [pages, setPages] = useState(3);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tokens, setTokens] = useState(0);
   const [phase, setPhase] = useState("idle");
   const [streamLog, setStreamLog] = useState("");
+  const [questions, setQuestions] = useState([]);
+  const [answers, setAnswers] = useState({});
   const abortRef = useRef(false);
-  const understandingRef = useRef(null); // holds Phase 0 result — subject/kind source of truth for all later prompts
+  const understandingRef = useRef(null);
+  const enrichedPromptRef = useRef("");
+  const verifiedFactsRef = useRef({ originalPrompt: "", verifiedFacts: [] });
 
   // Words per page on A4 ~350. Each body block = 1 paragraph.
   const wordsPerPara = pages <= 2 ? 120 : pages <= 4 ? 150 : 180;
@@ -246,85 +319,53 @@ function Step1Prompt({ onDone, setLoadingPhase }) {
     throw new Error("AI response could not be parsed. Please try again.");
   };
 
-  /* ── PHASE 0: understand the user's raw request before planning anything ── */
-  const understandPrompt = async () => {
-    const p =
-      `You are an intake analyst for a document-generation system. Your ONLY job is to read the user's raw, possibly messy request and extract structured intent. Do NOT write any document content yet.
+  const analyzeContext = async () => {
+    const p = `You are a Document Intake AI. The user wants to generate a document.
+Prompt: "${prompt.trim()}"
 
-User's raw request: "${prompt.trim()}"
-Selected document style: ${docType}
+First, determine if the prompt is usable. It is usable if it contains enough intent to identify that the user wants a document (e.g., "Create a project report about our AI automation system."). It is NOT usable if it's gibberish, a simple greeting, or too vague (e.g., "hello", "make something nice", "AI").
+If the prompt is NOT usable, set "usable" to false and return.
 
-Extract:
-- subject: the real-world subject/entity this document is about, with instruction verbs stripped (e.g. "Coffee Shop", not "create me a proposal for coffee shop")
-- documentTitle: a professional title for the finished document. Title Case, 3–8 words, no quotes, no trailing punctuation. Strip command verbs ("create me a", "write", "generate", "make", "I need", "can you", "please") and filler ("a document for", "about", "regarding"). Do NOT copy the user's sentence structure.
-- documentKind: the type of document being requested (e.g. "proposal", "report", "business plan", "case study", "SOW", "brief"). Infer it even if the user didn't say it explicitly.
-- audience: who this document is likely for (e.g. "prospective client", "internal stakeholders", "investors"). Infer a sensible default if not stated.
-- tone: one of "formal" | "professional" | "conversational" | "persuasive" — infer from docType and phrasing.
-- keyRequirements: array of explicit asks the user made (e.g. "include a competitor comparison table", "focus on growth strategy"). Empty array if none.
+If the prompt IS usable, determine the document intent, type, purpose, and audience.
+Then, determine if critical information is missing that would force you to write generic filler instead of specific, accurate content (e.g., missing business goals, metrics, technologies, audience details). Ask 1 to 4 targeted questions to gather this information.
+Do NOT ask questions whose answers can be inferred safely from the prompt.
+If the prompt has sufficient context, return an empty array for questions.
 
-Examples:
-Input: "create me a Proposal for Coffee Shop"
-Output: {"subject":"Coffee Shop","documentTitle":"Coffee Shop Business Proposal","documentKind":"proposal","audience":"prospective client or investor","tone":"persuasive","keyRequirements":[]}
-
-Input: "write a report about our Q3 marketing performance, include a chart of ad spend by channel"
-Output: {"subject":"Q3 Marketing Performance","documentTitle":"Q3 Marketing Performance Report","documentKind":"report","audience":"internal stakeholders","tone":"professional","keyRequirements":["include ad spend by channel data"]}
-
-ONLY valid JSON, no markdown fences, no extra text:
-{"subject":"...","documentTitle":"...","documentKind":"...","audience":"...","tone":"...","keyRequirements":[]}
-JSON:`;
-
-    let raw = "";
-    const gen = streamOpenAI("", p, { max_tokens: 300, temperature: 0.2, onStatus: setStreamLog });
-    for await (const chunk of gen) {
-      if (abortRef.current) return null;
-      raw += chunk;
-      setStreamLog("Understanding your request…");
-    }
-
-    let understanding = null;
-    try { understanding = parseJsonRobust(raw); } catch (_) { }
-
-    // If the model fails to return usable JSON, fall back gracefully instead of blocking the flow —
-    // the downstream cleanTitle() safety net still protects the title even in this degraded path.
-    if (!understanding || typeof understanding !== "object") {
-      understanding = {
-        subject: prompt.trim(),
-        documentTitle: prompt.trim(),
-        documentKind: "document", // generic fallback — NEVER the style selector, that caused the "Documentation" bug
-        audience: "",
-        tone: docType,
-        keyRequirements: [],
-      };
-    }
-    understanding.documentTitle = cleanTitle(understanding.documentTitle, prompt);
-    understanding.keyRequirements = Array.isArray(understanding.keyRequirements) ? understanding.keyRequirements.map(String).filter(Boolean) : [];
-    return understanding;
+Return ONLY valid JSON matching this exact structure:
+{
+  "usable": true,
+  "documentIntent": "...",
+  "documentType": "...",
+  "purpose": "...",
+  "audience": "...",
+  "missingCriticalInformation": ["..."],
+  "questions": ["...", "..."]
+}
+`;
+    setStreamLog("Checking your prompt...");
+    const raw = await callOpenAIJSON("", p, { max_tokens: 500, temperature: 0.1, onStatus: setStreamLog });
+    if (abortRef.current) return null;
+    return parseJsonRobust(raw);
   };
 
   /* ── Defense-in-depth: strip leaked meta-language if the model still echoes the raw prompt ── */
   const cleanTitle = (rawTitle, originalPrompt) => {
     let t = String(rawTitle || "").trim().replace(/^["'“”]+|["'“”]+$/g, "");
-    // If the model basically returned the raw prompt back, strip common instruction verbs/fillers
     const leadingCommand = /^(create|write|generate|make|draft|build|prepare|design)\s+(me\s+)?(a|an|the)?\s*/i;
     const fillerPhrases = /\b(for me|please|can you|i need|i want|document for|regarding)\b/gi;
     if (leadingCommand.test(t) || t.toLowerCase() === originalPrompt.trim().toLowerCase()) {
       t = t.replace(leadingCommand, "").replace(fillerPhrases, "").trim();
     }
-    // Title-case cleanup + trim trailing punctuation
     t = t.replace(/[.!?]+$/, "").trim();
     if (!t) t = "Document";
-    // Cap runaway lengths (model ignoring the 3–8 word guidance)
     const words = t.split(/\s+/);
     if (words.length > 10) t = words.slice(0, 10).join(" ");
     return t;
   };
 
-  /* ── PHASE 1: fast outline (plan), built from the understood intent, not the raw prompt ── */
-  const getOutline = async (understanding) => {
-    const userSections = parsedSubtopics;
-    const targetSectionCount = userSections
-      ? userSections.length
-      : pages <= 2 ? 3 : pages <= 4 ? 5 : pages <= 6 ? 6 : 8;
+  /* ── PHASE 1: AI Document Designer ── */
+  const generateDocumentDesign = async () => {
+    const targetSectionCount = pages <= 2 ? 3 : pages <= 4 ? 5 : pages <= 6 ? 6 : 8;
 
     const densityNote = pages <= 2
       ? `SHORT doc (${pages}p): prose only, no columns, minimal bullets, max 1 table.`
@@ -334,52 +375,81 @@ JSON:`;
           ? `DETAILED doc (${pages}p): h2 subsections, 1 table, 2–3 bullet sections, optionally 1 columns.`
           : `COMPREHENSIVE doc (${pages}p): rich structure — h2s, tables, bullets, columns, hr dividers.`;
 
-    const sectionInstruction = userSections
-      ? `Sections: EXACTLY these ${targetSectionCount} h1s in order: ${userSections.map(s => `"${s}"`).join(", ")}. Use them verbatim as headings.`
-      : `Sections: EXACTLY ${targetSectionCount} h1s. First="Introduction", last="Conclusion". Choose meaningful headings for the topic.`;
+    const sectionInstruction = `Sections: EXACTLY ${targetSectionCount} headings. Do NOT force a fixed template (like Introduction/Conclusion) unless appropriate for the document type. The AI must determine the optimal structure. Choose meaningful headings for the topic.`;
 
-    const p =
-      `Expert document architect. Create a section outline JSON for a ${understanding.documentKind} (writing style: ${docType}).
+    const p = `You are an expert AI Document Designer and Architect.
+Your job is to read the user's raw request and output a complete Document Design JSON.
+You must design a COHERENT and BEAUTIFUL visual design system (typography, colors, sizing, spacing) appropriate for the document type.
+Finally, plan the document structure (sections) based on the user's request.
 
-The user's request has already been understood — use this, not raw guesswork:
-- Subject: "${understanding.subject}"
-- Document kind: ${understanding.documentKind}
-- Audience: ${understanding.audience || "general professional audience"}
-- Tone: ${understanding.tone || docType}
-${understanding.keyRequirements.length ? `- User's explicit requirements — each MUST be reflected in at least one section heading or its extras:\n${understanding.keyRequirements.map(r => `  • ${r}`).join("\n")}` : ""}
+User Request & Verified Context:
+${enrichedPromptRef.current}
+Document Type: ${understandingRef.current?.type || "Document"}
+Purpose: ${understandingRef.current?.purpose || "Professional output"}
+Audience: ${understandingRef.current?.audience || "General audience"}
 
+Design intelligently. A modern proposal might use a large Title, sleek sans-serif font (e.g. Arial), and a vibrant accent color. A formal report might use a serif font (e.g. Times New Roman), justified text, and conservative margins. 
+
+Output ONLY valid JSON matching this exact structure:
+{
+  "document": {
+    "title": "..."
+  },
+  "design": {
+    "pageMargins": { "top": 1, "bottom": 1, "left": 1, "right": 1 },
+    "title": { "font": "Arial", "size": 24, "color": "#000000", "align": "center", "bold": true, "italic": false, "marginTop": 0, "marginBottom": 12, "lineSpacing": 1.15, "bgColor": "" },
+    "h1": { "font": "Arial", "size": 18, "color": "#000000", "align": "left", "bold": true, "italic": false, "marginTop": 16, "marginBottom": 18, "lineSpacing": 1.15, "bgColor": "" },
+    "h2": { "font": "Arial", "size": 14, "color": "#000000", "align": "left", "bold": true, "italic": false, "marginTop": 10, "marginBottom": 12, "lineSpacing": 1.15, "bgColor": "" },
+    "paragraph": { "font": "Arial", "size": 12, "color": "#000000", "align": "justify", "bold": false, "italic": false, "marginTop": 0, "marginBottom": 8, "lineSpacing": 1.5, "bgColor": "" },
+    "table": { "font": "Arial", "size": 11, "color": "#000000", "headerBg": "#1e3a8a", "headerColor": "#ffffff", "rowAltBg": "#eff6ff", "borderColor": "#374151", "lineSpacing": 1.15 },
+    "bullets": { "styleName": "Disc (•)", "indentLeft": 720, "hanging": 360, "itemSpacingAfter": 6, "lineSpacing": 1.5 }
+  },
+  "sections": [
+    {
+      "heading": "...",
+      "extras": []
+    }
+  ]
+}
+
+Available Fonts: Arial, Times New Roman, Georgia, Calibri, Verdana, Garamond, Trebuchet MS, Palatino Linotype, Helvetica, Tahoma.
+Colors MUST be valid Hex codes (e.g. #1E3A8A). Ensure the design is visually coherent.
+Extras per section: "h2:Title"|"bullets"|"table"|"columns"|"hr"|[] (do not overuse tables/columns).
 ${sectionInstruction}
 ${densityNote}
-Extras per section (after body): "h2:Title"|"bullets"|"table"|"columns"(≥5p, max 1 total, truly parallel only)|"hr"(max 2 total)|[]
-Rules: vary block types; no generic headings; columns only for Pros/Cons-style contrast; table only for structured data.
-
-ONLY valid JSON. Do NOT include a title field — the title is already finalized:
-{"sections":[{"heading":"...","extras":[]},{"heading":"...","extras":["bullets"]}]}
 JSON:`;
-    let raw = "";
-    const gen = streamOpenAI("", p, { max_tokens: 600, temperature: 0.25, onStatus: setStreamLog });
-    for await (const chunk of gen) {
-      if (abortRef.current) return null;
-      raw += chunk;
-      setStreamLog("Planning outline: " + raw.slice(-60));
+
+    setStreamLog("Designing your document...");
+    const raw = await callOpenAIJSON("", p, { max_tokens: 1500, temperature: 0.25, onStatus: setStreamLog });
+    if (abortRef.current) return null;
+
+    const obj = parseJsonRobust(raw);
+    if (obj && obj.document) {
+      obj.document.title = cleanTitle(obj.document.title, prompt);
     }
-    const outline = parseJsonRobust(raw);
-    outline._targetSectionCount = targetSectionCount;
-    outline.title = understanding.documentTitle; // finalized in Phase 0 — never re-derived here
-    return outline;
+    if (obj) obj._targetSectionCount = targetSectionCount;
+    return obj;
   };
 
   /* ── PHASE 2a: plain-text body paragraphs ── */
   const fillBodySection = async (docTitle, heading, numParas, previousSummary, onProgress) => {
     const contextNote = previousSummary
-      ? `Do NOT repeat: ${previousSummary}`
+      ? `\nPREVIOUS SECTIONS (Do NOT repeat this information or re-introduce the topic):\n${previousSummary}\n`
       : `Opening section — set the stage.`;
     const p =
-      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Write ${numParas} body paragraph(s).
-Doc: "${docTitle}" | Section: "${heading}"
-${wordsPerPara}–${wordsPerPara + 50} words each. ${contextNote}
+      `You are a professional writer creating a ${understandingRef.current?.type || "document"}.
+Audience: ${understandingRef.current?.audience || "general professional audience"}
+Tone: ${understandingRef.current?.tone || "professional"}
+Doc Title: "${docTitle}" | Section: "${heading}"
+
+Original Context & Verified User Facts:
+${enrichedPromptRef.current}
+
+Write ${numParas} body paragraph(s). ${contextNote}
+${wordsPerPara}–${wordsPerPara + 50} words each.
 Rules: distinct aspects per para, natural transitions, **bold** key terms (2–4/para), _italic_ for jargon.
-NO: "In this section…", closing summaries, filler phrases, fake stats, headings, bullets, JSON, meta-commentary about the document itself (e.g. "Key Takeaways", "Future Implications", "This proposal/report demonstrates…", "In conclusion, this document..."). Write as if the reader is a person reading real content, never as if summarizing your own output.
+CRITICAL RULE: DO NOT FABRICATE PROJECT FACTS. If the user did not provide percentages, statistics, results, costs, or technology names, DO NOT invent them. Write without numbers (e.g. "The system improves efficiency" instead of "The system improves efficiency by 25%").
+NO: "In this section…", closing summaries, filler phrases, headings, bullets, JSON. Write as if the reader is a person reading real content.
 Paragraphs:`;
     let raw = "";
     const gen = streamOpenAI("", p, {
@@ -411,7 +481,15 @@ Paragraphs:`;
       parts.push(`"columns": array of exactly 2 strings representing genuinely contrasting aspects of "${heading}". Each must start with a meaningful bold label derived from the content (e.g. "**Advantages**: ...", "**Disadvantages**: ...", "**Pros**: ...", "**Cons**: ...", "**Benefits**: ...", "**Drawbacks**: ...") followed by 2–3 sentences. NEVER use the word "Label" as the label.`);
 
     const p =
-      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Doc: "${docTitle}" | Section: "${heading}"
+      `You are a professional writer working on a ${understandingRef.current?.type || "document"}.
+Audience: ${understandingRef.current?.audience || "general professional audience"}
+Tone: ${understandingRef.current?.tone || "professional"}
+Doc Title: "${docTitle}" | Section: "${heading}"
+
+Original Context & Verified User Facts:
+${enrichedPromptRef.current}
+
+CRITICAL RULE: DO NOT FABRICATE PROJECT FACTS. If a specific metric, cost, or result is not provided by the user, write qualitatively and NEVER invent numbers.
 Return ONE JSON object with ONLY these keys: ${extrasNeeded.join(", ")}
 ${parts.join("\n")}
 NO markdown fences, no extra text.
@@ -470,9 +548,18 @@ JSON:`;
   /* ── PHASE 2e: batch h2 subsections in one call ── */
   const fillH2Batch = async (docTitle, heading, subHeadings, previousSummary) => {
     const p =
-      `${docType} writer working on a ${understandingRef.current?.documentKind || "document"}. Doc: "${docTitle}" | Parent section: "${heading}"
-Write one body paragraph per subsection below. ${previousSummary ? `Do NOT repeat: ${previousSummary}` : ""}
-${wordsPerPara}–${wordsPerPara + 40} words each. **bold** key terms (2–3/para). No filler, no "In this section…".
+      `You are a professional writer working on a ${understandingRef.current?.type || "document"}.
+Audience: ${understandingRef.current?.audience || "general professional audience"}
+Tone: ${understandingRef.current?.tone || "professional"}
+Doc Title: "${docTitle}" | Parent section: "${heading}"
+
+Original Context & Verified User Facts:
+${enrichedPromptRef.current}
+
+Write one body paragraph per subsection below. ${wordsPerPara}–${wordsPerPara + 40} words each.
+${previousSummary ? `\nPREVIOUS SECTIONS (Do NOT repeat this information):\n${previousSummary}\n` : ""}
+**bold** key terms (2–3/para). No filler, no "In this section…".
+CRITICAL RULE: DO NOT FABRICATE PROJECT FACTS. Never invent numbers, statistics, or results unless explicitly provided in the User Facts.
 Return ONE JSON object keyed by subsection title:
 ${JSON.stringify(Object.fromEntries(subHeadings.map(s => [s, "paragraph text here"])))}
 JSON:`;
@@ -496,26 +583,94 @@ JSON:`;
     if (prompt.trim().length < 10) { setError("Please provide a more descriptive prompt (at least 20 characters)."); return; }
     if (prompt.length > 2000) { setError("Prompt is too long. Please keep it under 2000 characters."); return; }
     setError(""); setLoading(true); setTokens(0); setPhase("understanding");
-    setStreamLog("Understanding your request…");
-    setLoadingPhase("template");
+    setStreamLog("Checking your prompt...");
     abortRef.current = false;
     _nid = 0;
 
     try {
-      // ── Phase 0: understand the user's raw request ──
-      const understanding = await understandPrompt();
-      if (abortRef.current || !understanding) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
-      understandingRef.current = understanding;
+      const contextResult = await analyzeContext();
+      if (abortRef.current) { setLoading(false); setPhase("idle"); return; }
 
-      setPhase("structure");
-      // ── Phase 1: outline (plan) — built from the understood intent, not the raw prompt ──
-      const outline = await getOutline(understanding);
-      if (abortRef.current || !outline) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
+      if (contextResult && contextResult.usable === false) {
+         setPhase("improve_prompt");
+         setLoading(false);
+         return;
+      }
 
-      // Safety truncation: enforce exactly what was planned
-      const rawSections = Array.isArray(outline.sections) ? outline.sections : [];
-      const sections = rawSections.slice(0, outline._targetSectionCount || rawSections.length);
-      if (!sections.length) throw new Error("Outline empty. Try again.");
+      understandingRef.current = {
+        type: contextResult?.documentType || "document",
+        purpose: contextResult?.purpose || "",
+        audience: contextResult?.audience || "",
+        title: "Document" // will be set in design
+      };
+
+      if (contextResult && Array.isArray(contextResult.questions) && contextResult.questions.length > 0) {
+        setQuestions(contextResult.questions);
+        const initAnswers = {};
+        contextResult.questions.forEach(q => initAnswers[q] = "");
+        setAnswers(initAnswers);
+        setLoading(false);
+        setPhase("questions");
+        return;
+      }
+      
+      verifiedFactsRef.current = {
+         originalPrompt: prompt.trim(),
+         verifiedFacts: []
+      };
+      enrichedPromptRef.current = `User Prompt: "${prompt.trim()}"\n\n`;
+      await generatePipeline();
+    } catch(e) {
+      setError(e.message);
+      setLoading(false);
+      setPhase("idle");
+    }
+  };
+
+  const continueGo = async () => {
+    setError(""); setLoading(true); setPhase("understanding");
+    abortRef.current = false;
+    _nid = 0;
+    try {
+      let verifiedFacts = [];
+      questions.forEach(q => {
+         if (answers[q]?.trim()) {
+           verifiedFacts.push({ fact: answers[q].trim(), source: "user", question: q });
+         }
+      });
+      verifiedFactsRef.current = {
+         originalPrompt: prompt.trim(),
+         verifiedFacts: verifiedFacts
+      };
+      
+      let enrichedPrompt = `User Prompt: "${prompt.trim()}"\n\n`;
+      if (verifiedFacts.length > 0) {
+          enrichedPrompt += `Verified User Facts:\n`;
+          verifiedFacts.forEach(f => enrichedPrompt += `- Q: ${f.question}\n  A: ${f.fact}\n`);
+      }
+      enrichedPromptRef.current = enrichedPrompt;
+      await generatePipeline();
+    } catch(e) {
+      setError(e.message);
+      setLoading(false);
+      setPhase("idle");
+    }
+  };
+
+  const generatePipeline = async () => {
+    try {
+      // ── Phase 1: AI Document Design ──
+      setPhase("designing");
+      setStreamLog("Designing your document…");
+      const designResult = await generateDocumentDesign();
+      if (abortRef.current || !designResult) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
+      
+      understandingRef.current = designResult.document || { type: "document", title: "Document", tone: "professional", audience: "" };
+      const validatedStyles = validateDesign(designResult.design);
+      
+      const rawSections = Array.isArray(designResult.sections) ? designResult.sections : [];
+      const sections = rawSections.slice(0, designResult._targetSectionCount || rawSections.length);
+      if (!sections.length) throw new Error("Document plan empty. Try again.");
 
       // Compute bodyPerSec dynamically based on actual section count and target pages
       const actualSecCount = sections.length;
@@ -526,7 +681,7 @@ JSON:`;
 
       // ── Phase 2: sequential sections ──
       const elements = [];
-      elements.push({ id: nid(), type: "title", text: outline.title || "Document" });
+      elements.push({ id: nid(), type: "title", text: understandingRef.current.title || "Document" });
 
       let previousSummary = ""; // contextual memory for amnesia fix
 
@@ -536,29 +691,29 @@ JSON:`;
         const heading = sec.heading || `Section ${i + 1}`;
         const extras = Array.isArray(sec.extras) ? sec.extras : [];
 
-        setStreamLog(`Section ${i + 1}/${sections.length}: ${heading}…`);
+        setStreamLog(`Writing section ${i + 1}/${sections.length}: ${heading}…`);
         setTokens(Math.round((i / sections.length) * 100));
 
         elements.push({ id: nid(), type: "h1", text: heading });
 
         // Body paragraphs
-        const paras = await fillBodySection(outline.title || "Document", heading, dynamicBodyPerSec, previousSummary, (len) => {
-          setStreamLog(`Section ${i + 1}/${sections.length} — ${heading}: ${Math.round(len / 4)} tokens`);
+        const paras = await fillBodySection(understandingRef.current.title || "Document", heading, dynamicBodyPerSec, previousSummary, (len) => {
+          setStreamLog(`Writing section ${i + 1}/${sections.length} — ${heading}: ${Math.round(len / 4)} tokens`);
         });
         if (abortRef.current) break;
         if (paras) {
           elements.push({ id: nid(), type: "paragraph", texts: paras });
-          previousSummary += (previousSummary ? " " : "") + `Section "${heading}": ${paras[0].slice(0, 100).replace(/\n/g, " ")}...`;
-          const summaryParts = previousSummary.split('Section "');
-          if (summaryParts.length > 3) previousSummary = 'Section "' + summaryParts.slice(-2).join('Section "');
+          previousSummary += `\n- Section "${heading}": ${paras[0].substring(0, 150).replace(/\n/g, " ")}...`;
+          const summaryParts = previousSummary.split('\n- Section "');
+          if (summaryParts.length > 5) previousSummary = '\n- Section "' + summaryParts.slice(-4).join('\n- Section "');
         }
 
         // ── Batch 1: all h2 subsections in ONE call ──
         const h2Extras = extras.filter(e => typeof e === "string" && e.startsWith("h2:"));
         if (h2Extras.length > 0) {
           const subHeadings = h2Extras.map(e => e.slice(3).trim() || `${heading} — Details`);
-          setStreamLog(`Section ${i + 1}/${sections.length} — ${heading}: writing ${subHeadings.length} subsections…`);
-          const h2Results = await fillH2Batch(outline.title || "Document", heading, subHeadings, previousSummary);
+          setStreamLog(`Writing section ${i + 1}/${sections.length} — ${heading}: writing ${subHeadings.length} subsections…`);
+          const h2Results = await fillH2Batch(understandingRef.current.title || "Document", heading, subHeadings, previousSummary);
           if (abortRef.current) break;
           for (const subHeading of subHeadings) {
             elements.push({ id: nid(), type: "h2", text: subHeading });
@@ -575,8 +730,8 @@ JSON:`;
         const hasHr = extras.includes("hr");
 
         if (extrasNeeded.length > 0) {
-          setStreamLog(`Section ${i + 1}/${sections.length} — ${heading}: writing ${extrasNeeded.join(", ")}…`);
-          const extrasResult = await fillExtras(outline.title || "Document", heading, extrasNeeded);
+          setStreamLog(`Writing section ${i + 1}/${sections.length} — ${heading}: writing ${extrasNeeded.join(", ")}…`);
+          const extrasResult = await fillExtras(understandingRef.current.title || "Document", heading, extrasNeeded);
           if (abortRef.current) break;
 
           // Preserve outline ordering when inserting results
@@ -590,7 +745,7 @@ JSON:`;
                 elements.push({ id: nid(), type: "columns", cols: 2, texts: extrasResult.columns });
               } else {
                 // fallback: add as paragraph
-                const fallbackParas = await fillBodySection(outline.title || "Document", heading + " (additional context)", 1, previousSummary, () => { });
+                const fallbackParas = await fillBodySection(understandingRef.current.title || "Document", heading + " (additional context)", 1, previousSummary, () => { });
                 if (!abortRef.current && fallbackParas) elements.push({ id: nid(), type: "paragraph", texts: fallbackParas });
               }
             }
@@ -600,10 +755,51 @@ JSON:`;
         if (hasHr) elements.push({ id: nid(), type: "hr" });
       }
 
+      // ── Phase 3: Fact Audit ──
+      setPhase("audit");
+      setStreamLog("Checking the content...");
+      const auditPrompt = `You are a Fact Auditor.
+Review the following generated document content against the Verified User Facts.
+Your goal is to detect unsupported project-specific claims, specifically:
+- Fabricated numbers (e.g. 25% productivity increase)
+- Fabricated metrics (e.g. 10,000 users)
+- Made up technologies not mentioned in facts
+
+Verified User Facts:
+${enrichedPromptRef.current}
+
+Generated Document Snippet (First 1500 chars):
+${elements.map(e => e.text || (e.texts && e.texts.join(" ")) || "").join(" ").substring(0, 1500)}
+
+If there are any unsupported claims, return an array of strings detailing them. Otherwise, return an empty array.
+Return valid JSON: {"unsupportedClaims": []}
+`;
+      // Lightweight audit logic - fire and forget, log for now to prevent blocking flow
+      try {
+        const auditRes = await callOpenAIJSON("", auditPrompt, { max_tokens: 300, temperature: 0.1, onStatus: () => {} });
+        const auditJson = parseJsonRobust(auditRes);
+        if (auditJson && auditJson.unsupportedClaims && auditJson.unsupportedClaims.length > 0) {
+            console.warn("Fact Audit found unsupported claims:", auditJson.unsupportedClaims);
+            // In a fuller implementation, we could highlight these in the editor.
+        }
+      } catch (e) {
+        console.warn("Fact Audit failed to run", e);
+      }
+
       if (abortRef.current) { setLoading(false); setLoadingPhase(null); setPhase("idle"); return; }
+      
       setPhase("done");
+      setStreamLog("Preparing your Word document...");
       setLoadingPhase(null);
-      onDone({ elements, docTitle: outline.title || "Document", pages });
+      
+      // Safe Document Model output
+      onDone({ 
+        elements, 
+        docTitle: understandingRef.current.title || "Document", 
+        pages, 
+        docStyles: validatedStyles,
+        context: verifiedFactsRef.current
+      });
 
     } catch (e) {
       setError(e.message);
@@ -658,36 +854,62 @@ JSON:`;
             <p><strong>Alpha Demo:</strong> This is an early version of DocReplacer. Generated documents may contain content or formatting errors. Please use sample information and review the document before using it.</p>
           </div>
         </div>
+
+        {phase === "improve_prompt" && (
+          <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-red-200/50 border border-red-100 mt-6 animate-in fade-in slide-in-from-top-4">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Give me a little more detail</h3>
+                <p className="text-xs text-slate-500">Tell me what document you want to create and what it should be about.</p>
+              </div>
+            </div>
+            <div className="mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <p className="text-sm text-slate-600 mb-2"><strong>Example:</strong></p>
+              <p className="text-sm italic text-slate-700">"Create a project report about our AI admission automation system."</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setPhase("idle"); document.querySelector('textarea').focus(); }} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all">
+                Improve Prompt
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === "questions" && questions.length > 0 && (
+          <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-indigo-200/50 border border-indigo-100 mt-6 animate-in fade-in slide-in-from-top-4">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Missing Details</h3>
+                <p className="text-xs text-slate-500">Provide a bit more context for better results</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-4">
+              {questions.map((q, i) => (
+                <div key={i}>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">{q}</label>
+                  <input type="text" value={answers[q] || ""} onChange={e => setAnswers({...answers, [q]: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none" placeholder="Your answer..." />
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button onClick={continueGo} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2">
+                Continue Generation
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Right Column: Settings */}
       <div className="w-full lg:w-[400px] flex flex-col gap-6">
-        <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Document Type</h3>
-              <p className="text-xs text-slate-500">Sets the formatting style</p>
-            </div>
-          </div>
-          
-          <div className="flex flex-col gap-2">
-            {DOC_TYPES.map(dt => {
-              const a = docType === dt.value;
-              return (
-                <button key={dt.value} onClick={() => setDocType(dt.value)} disabled={loading}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-semibold transition-all ${a ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm' : 'bg-transparent border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}>
-                  <span className={`text-lg ${a ? 'opacity-100' : 'opacity-60'}`}>{dt.icon}</span>
-                  {dt.label}
-                  {a && <span className="ml-auto text-indigo-600 font-black">✓</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center">
@@ -726,19 +948,16 @@ JSON:`;
         )}
 
         <div className="mt-auto">
-          <button onClick={go} disabled={loading || !prompt.trim()}
-            className={`w-full py-4 px-8 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${loading || !prompt.trim()
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 hover:shadow-xl hover:shadow-indigo-600/30 hover:-translate-y-0.5'
-              }`}>
-            {loading ? <><span className="animate-spin inline-block text-xl">⟳</span> Building...</> : <>Create Document <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></>}
-          </button>
-          
-          {loading && (
+          {loading ? (
             <div className="mt-4 flex flex-col items-center">
-              <div className="text-sm font-semibold text-indigo-600 animate-pulse">{streamLog || "Initializing generation..."}</div>
+              <div className="text-sm font-semibold text-indigo-600 animate-pulse">{streamLog || "Working…"}</div>
               <button onClick={cancel} className="mt-3 text-xs text-slate-500 hover:text-red-500 font-bold uppercase tracking-wider transition-colors">Cancel Generation</button>
             </div>
+          ) : (
+            <button onClick={go} disabled={phase === "questions"} className="w-full group relative flex items-center justify-center gap-3 bg-slate-900 hover:bg-indigo-600 text-white px-8 py-5 rounded-2xl font-bold text-lg transition-all duration-300 shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_32px_rgba(79,70,229,0.3)] disabled:opacity-50 disabled:cursor-not-allowed">
+              <span>Generate Document</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:translate-x-1 transition-transform"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
           )}
         </div>
       </div>
@@ -1779,9 +1998,10 @@ export default function DocxGenerator() {
           {step === 0 && (
             <Step1Prompt
               setLoadingPhase={setLoadingPhase}
-              onDone={({ elements: els, docTitle, pages, prompt }) => {
+              onDone={({ elements: els, docTitle, pages, prompt, docStyles: newStyles }) => {
                 setElements(els);
                 setTargetPages(pages);
+                if (newStyles) setDocStyles(newStyles);
                 setStep(1);
               }} />
           )}
