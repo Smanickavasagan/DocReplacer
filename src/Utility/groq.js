@@ -1,4 +1,5 @@
 import { sanitiseJsonStr, repairTruncated, extractObjects, safeParseJSON } from './jsonParser.js';
+// API Keys for different agents
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_API_KEY_PLAN = import.meta.env.VITE_GROQ_API_KEY_PLAN;
 const GROQ_MODEL = import.meta.env.VITE_GROQ_MODEL || "llama-3.3-70b-versatile";
