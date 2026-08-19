@@ -186,6 +186,45 @@ function LoadingOverlay({ phase }) {
   );
 }
 
+const stripReasoning = (text) => {
+  if (typeof text !== 'string') return '';
+  // 1. Strip standard <think>...</think> blocks
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+  // 2. Strip any trailing open <think> tags that have not been closed yet
+  cleaned = cleaned.replace(/<think>[\s\S]*$/g, "");
+  return cleaned.trim();
+};
+
+const darkenToMax = (hex, maxVal) => {
+  if (typeof hex !== 'string' || !/^#[0-9A-Fa-f]{6}$/i.test(hex)) return hex;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (brightness > maxVal) {
+    const scale = maxVal / brightness;
+    const nr = Math.floor(r * scale);
+    const ng = Math.floor(g * scale);
+    const nb = Math.floor(b * scale);
+    const toHex = (val) => Math.max(0, Math.min(255, val)).toString(16).padStart(2, '0');
+    return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
+  }
+  return hex;
+};
+
+const normalizeParagraphColor = (hex, def) => {
+  if (typeof hex !== 'string' || !/^#[0-9A-Fa-f]{6}$/i.test(hex)) return def;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+  const isNeutral = Math.abs(r - g) < 40 && Math.abs(r - b) < 40 && Math.abs(g - b) < 40;
+  if (!isNeutral || brightness > 70) {
+    return "#1F2937"; // default to professional dark charcoal
+  }
+  return hex;
+};
+
 function validateDesign(design) {
   const d = {
     title: { ...DEFAULT_DOC_STYLES.title },
@@ -225,7 +264,15 @@ function validateDesign(design) {
     if (design[key]) {
       if (design[key].font) d[key].font = normFont(design[key].font, d[key].font);
       if (design[key].size !== undefined) d[key].size = clamp(design[key].size, 6, 96, d[key].size);
-      if (design[key].color) d[key].color = normColor(design[key].color, d[key].color);
+      if (design[key].color) {
+        let colorVal = normColor(design[key].color, d[key].color);
+        if (key === "paragraph") {
+          colorVal = normalizeParagraphColor(colorVal, d[key].color);
+        } else {
+          colorVal = darkenToMax(colorVal, 120);
+        }
+        d[key].color = colorVal;
+      }
       if (design[key].align) d[key].align = normAlign(design[key].align, d[key].align);
       if (design[key].bgColor !== undefined) d[key].bgColor = design[key].bgColor === "" ? "" : normColor(design[key].bgColor, d[key].bgColor);
       if (design[key].marginTop !== undefined) d[key].marginTop = clamp(design[key].marginTop, 0, 100, d[key].marginTop);
@@ -237,10 +284,10 @@ function validateDesign(design) {
   }
 
   if (design.table) {
-    if (design.table.headerBg) d.table.headerBg = normColor(design.table.headerBg, d.table.headerBg);
+    if (design.table.headerBg) d.table.headerBg = darkenToMax(normColor(design.table.headerBg, d.table.headerBg), 120);
     if (design.table.headerColor) d.table.headerColor = normColor(design.table.headerColor, d.table.headerColor);
     if (design.table.rowAltBg) d.table.rowAltBg = normColor(design.table.rowAltBg, d.table.rowAltBg);
-    if (design.table.borderColor) d.table.borderColor = normColor(design.table.borderColor, d.table.borderColor);
+    if (design.table.borderColor) d.table.borderColor = darkenToMax(normColor(design.table.borderColor, d.table.borderColor), 150);
   }
 
   if (design.bullets) {
@@ -293,8 +340,10 @@ function Step1Prompt({ onDone, setLoadingPhase }) {
 
   /* ── JSON repair helper (only used for bullets/tables) ── */
   const parseJsonRobust = (raw) => {
+    // Automatically strip reasoning first
+    const cleanedRaw = stripReasoning(raw);
     // Step 0: Strip markdown code fences entirely (LLMs sometimes wrap output in ```json ... ```)
-    let clean = raw
+    let clean = cleanedRaw
       .replace(/```json\s*/gi, "")
       .replace(/```\s*/g, "")
       .trim();
@@ -343,7 +392,7 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
     setStreamLog("Checking your prompt...");
-    const raw = await callOpenAIJSON("", p, { max_tokens: 500, temperature: 0.1, onStatus: setStreamLog });
+    const raw = await callOpenAIJSON("", p, { max_tokens: 2000, temperature: 0.1, onStatus: setStreamLog });
     if (abortRef.current) return null;
     return parseJsonRobust(raw);
   };
@@ -388,7 +437,8 @@ Document Type: ${understandingRef.current?.type || "Document"}
 Purpose: ${understandingRef.current?.purpose || "Professional output"}
 Audience: ${understandingRef.current?.audience || "General audience"}
 
-Design intelligently. A modern proposal might use a large Title, sleek sans-serif font (e.g. Arial), and a vibrant accent color. A formal report might use a serif font (e.g. Times New Roman), justified text, and conservative margins. 
+Design intelligently. A formal report might use a serif font (e.g. Times New Roman), justified text, and conservative margins. A modern proposal might use a large Title, sleek sans-serif font (e.g. Arial).
+COLOR SCHEME RULES: Colors MUST be high-contrast, extremely professional corporate colors (e.g., Deep Navy, Charcoal, Forest Green, Dark Slate, Burgundy, Crimson). Do NOT use bright primary colors (bright yellow, orange, cyan, neon). Title, H1, H2, and Table Header colors must be visually unified and harmonious. Paragraph text color must always be black or dark gray (#1E293B, #334155, #000000) for maximum legibility.
 
 Output ONLY valid JSON matching this exact structure:
 {
@@ -413,17 +463,17 @@ Output ONLY valid JSON matching this exact structure:
 }
 
 Available Fonts: Arial, Times New Roman, Georgia, Calibri, Verdana, Garamond, Trebuchet MS, Palatino Linotype, Helvetica, Tahoma.
-Colors MUST be valid Hex codes (e.g. #1E3A8A). Ensure the design is visually coherent.
+Colors MUST be valid Hex codes (e.g. #1E3A8A). Ensure the design is visually coherent, readable, and highly professional.
 Extras per section: "h2:Title"|"bullets"|"table"|"columns"|"hr"|[] (do not overuse tables/columns).
 ${sectionInstruction}
 ${densityNote}
 JSON:`;
 
     setStreamLog("Designing your document...");
-    const raw = await callOpenAIJSON("", p, { max_tokens: 1500, temperature: 0.25, onStatus: setStreamLog });
+    const raw = await callOpenAIJSON("", p, { max_tokens: 2500, temperature: 0.25, onStatus: setStreamLog });
     if (abortRef.current) return null;
 
-    const obj = parseJsonRobust(raw);
+    const obj = parseJsonRobust(stripReasoning(raw));
     if (obj && obj.document) {
       obj.document.title = cleanTitle(obj.document.title, prompt);
     }
@@ -453,7 +503,7 @@ NO: "In this section…", closing summaries, filler phrases, headings, bullets, 
 Paragraphs:`;
     let raw = "";
     const gen = streamOpenAI("", p, {
-      max_tokens: Math.min(numParas * (wordsPerPara + 50) * 2, 1200),
+      max_tokens: Math.max(1500, numParas * 800),
       temperature: 0.35,
       onStatus: setStreamLog,
     });
@@ -462,9 +512,10 @@ Paragraphs:`;
       raw += chunk;
       onProgress(raw.length);
     }
+    const cleaned = stripReasoning(raw);
     // Split on blank lines → array of paragraphs
-    const paras = raw.split(/\n\s*\n/).map(p => p.replace(/\n/g, " ").trim()).filter(p => p.length > 40);
-    return paras.length ? paras : [raw.trim()];
+    const paras = cleaned.split(/\n\s*\n/).map(p => p.replace(/\n/g, " ").trim()).filter(p => p.length > 40);
+    return paras.filter(Boolean);
   };
 
   /* ── PHASE 2b–d: batched extras (bullets + table + columns in ONE call) ── */
@@ -497,16 +548,17 @@ JSON:`;
 
     let raw = "";
     const gen = streamOpenAI("", p, {
-      max_tokens: extrasNeeded.length * 350 + 100,
+      max_tokens: Math.max(1200, extrasNeeded.length * 600),
       temperature: 0.3,
       onStatus: setStreamLog,
     });
     for await (const chunk of gen) { if (abortRef.current) return null; raw += chunk; }
 
+    const cleaned = stripReasoning(raw);
     let obj = null;
-    try { obj = parseJsonRobust(raw); } catch (_) { }
+    try { obj = parseJsonRobust(cleaned); } catch (_) { }
     if (!obj) {
-      try { obj = parseJsonRobust(raw.slice(raw.search(/\{/))); } catch (_) { }
+      try { obj = parseJsonRobust(cleaned.slice(cleaned.search(/\{/))); } catch (_) { }
     }
     if (!obj) return {};
 
@@ -565,13 +617,14 @@ ${JSON.stringify(Object.fromEntries(subHeadings.map(s => [s, "paragraph text her
 JSON:`;
     let raw = "";
     const gen = streamOpenAI("", p, {
-      max_tokens: Math.min(subHeadings.length * (wordsPerPara + 40) * 2 + 100, 1400),
+      max_tokens: Math.max(1500, subHeadings.length * 600),
       temperature: 0.35,
       onStatus: setStreamLog,
     });
     for await (const chunk of gen) { if (abortRef.current) return null; raw += chunk; }
+    const cleaned = stripReasoning(raw);
     try {
-      const obj = parseJsonRobust(raw);
+      const obj = parseJsonRobust(cleaned);
       if (obj && typeof obj === "object") return obj;
     } catch (_) { }
     return {};
@@ -776,7 +829,7 @@ Return valid JSON: {"unsupportedClaims": []}
 `;
       // Lightweight audit logic - fire and forget, log for now to prevent blocking flow
       try {
-        const auditRes = await callOpenAIJSON("", auditPrompt, { max_tokens: 300, temperature: 0.1, onStatus: () => {} });
+        const auditRes = await callOpenAIJSON("", auditPrompt, { max_tokens: 1000, temperature: 0.1, onStatus: () => {} });
         const auditJson = parseJsonRobust(auditRes);
         if (auditJson && auditJson.unsupportedClaims && auditJson.unsupportedClaims.length > 0) {
             console.warn("Fact Audit found unsupported claims:", auditJson.unsupportedClaims);

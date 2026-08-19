@@ -2,7 +2,8 @@ import { sanitiseJsonStr, repairTruncated, extractObjects, safeParseJSON } from 
 // API Keys for different agents
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GROQ_API_KEY_PLAN = import.meta.env.VITE_GROQ_API_KEY_PLAN;
-const GROQ_MODEL = import.meta.env.VITE_GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_MODEL = import.meta.env.VITE_GROQ_MODEL;
+const GROQ_PLANNING_MODEL = import.meta.env.VITE_GROQ_PLANNING_MODEL || GROQ_MODEL;
 
 const GROQ_STATUS_MESSAGES = {
   400: "Bad request. Check your prompt or Groq model name.",
@@ -17,6 +18,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function groqRequest(body, retries = 5, onStatus = null, apiKey = GROQ_API_KEY) {
   if (!apiKey) throw new Error("Groq API key is missing. Set VITE_GROQ_API_KEY in your .env file.");
+  if (!body.model) throw new Error("Groq model is missing. Set VITE_GROQ_MODEL in your .env file.");
   for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -70,11 +72,11 @@ async function callOpenAIJSON(_apiKey, prompt, opts = {}) {
   const apiKeyToUse = GROQ_API_KEY_PLAN || GROQ_API_KEY;
   const res = await groqRequest(
     {
-      model: import.meta.env.VITE_GROQ_PLANNING_MODEL || GROQ_MODEL,
+      model: GROQ_PLANNING_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: opts.temperature ?? 0.2,
       max_tokens: opts.max_tokens || 4096,
-      response_format: { type: "json_object" }
+      // REMOVED response_format line here to stop the 400 bad request error
     },
     5,
     opts.onStatus || null,
